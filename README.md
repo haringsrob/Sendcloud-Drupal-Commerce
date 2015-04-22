@@ -66,7 +66,7 @@ none.
 MAINTAINERS
 -----------
 Current maintainers:
- * Harings Rob - https://www.drupal.org/u/easycombvba
+ * Harings Rob - https://www.drupal.org/u/harings_rob
 
 This project has been sponsored by:
  * easy-webdesign.be
