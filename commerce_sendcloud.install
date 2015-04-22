@@ -1,0 +1,259 @@
+<?php
+
+/**
+ * @file
+ * Defines the database schema for bpost api shipping services.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function commerce_sendcloud_install() {
+  // Create fields.
+  $field = field_info_field('sendcloud_label');
+  if (empty($field)) {
+    $field = array(
+      'field_name' => 'sendcloud_label',
+      'type' => 'file',
+      'settings' => array(
+        'file_extensions' => 'pdf',
+        'file_directory' => 'sendcloud_labels',
+        'description_field' => 0,
+      ),
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'translatable' => FALSE,
+    );
+    field_create_field($field);
+  }
+  // Check if the field is already linked.
+  $instance = field_info_instance('commerce_order', 'sendcloud_label', 'commerce_order');
+  if (empty($instance)) {
+    $instance = array(
+      'field_name' => 'sendcloud_label',
+      'entity_type' => 'commerce_order',
+      'bundle' => 'commerce_order',
+      'label' => 'Sendcloud label',
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'file_generic',
+      ),
+    );
+    field_create_instance($instance);
+  }
+
+  // Tracking number.
+  $field = field_info_field('sendcloud_tracking_number');
+  if (empty($field)) {
+    $field = array(
+      'field_name' => 'sendcloud_tracking_number',
+      'type' => 'text',
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'translatable' => FALSE,
+    );
+    field_create_field($field);
+  }
+  // Check if the field is already linked.
+  $instance = field_info_instance('commerce_order', 'sendcloud_tracking_number', 'commerce_order');
+  if (empty($instance)) {
+    $instance = array(
+      'field_name' => 'sendcloud_tracking_number',
+      'entity_type' => 'commerce_order',
+      'bundle' => 'commerce_order',
+      'label' => 'Sendcloud Tracking number',
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'textfield',
+      ),
+    );
+    field_create_instance($instance);
+  }
+
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_sendcloud_uninstall() {
+  // Delete the field instance.
+  $instance = field_info_instance('commerce_order', 'sendcloud_label', 'commerce_order');
+  if (!empty($instance)) {
+    $instance = array(
+      'field_name' => 'sendcloud_label',
+      'entity_type' => 'commerce_order',
+      'bundle' => 'commerce_order',
+      'label' => 'Sendcloud label bytes',
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'file_generic',
+      ),
+    );
+    field_delete_instance($instance, TRUE);
+  }
+
+  // Delete the field itself.
+  $field = field_info_field('sendcloud_label');
+  if (!empty($field)) {
+    field_delete_field('sendcloud_label');
+  }
+
+  // Delete the field instance.
+  $instance = field_info_instance('commerce_order', 'sendcloud_tracking_number', 'commerce_order');
+  if (!empty($instance)) {
+    $instance = array(
+      'field_name' => 'sendcloud_tracking_number',
+      'entity_type' => 'commerce_order',
+      'bundle' => 'commerce_order',
+      'label' => 'Sendcloud Tracking number',
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'textfield',
+      ),
+    );
+    field_delete_instance($instance, TRUE);
+  }
+
+  // Delete the field itself.
+  $field = field_info_field('sendcloud_tracking_number');
+  if (!empty($field)) {
+    field_delete_field('sendcloud_tracking_number');
+  }
+
+  // Disable table.
+  db_drop_table('commerce_sendcloud_service');
+
+  // Remove variable.
+  variable_del('commerce_sendcloud_key');
+  variable_del('commerce_sendcloud_secret');
+  variable_del('commerce_sendcloud_testmode');
+  variable_del('commerce_sendcloud_download_labels');
+  variable_del('commerce_sendcloud_debug');
+
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function commerce_sendcloud_requirements($phase) {
+  $requirements = array();
+  $t = get_t();
+  if ($phase == 'runtime') {
+    // Check if all libraries are avaialble.
+    if (($lib = libraries_load('sendcloud')) && $lib['loaded'] == 1) {
+      // Library loaded corect.
+      $requirements['sendcloud_library'] = array(
+        'title' => $t('Sendcloud library'),
+        'description' => $t(
+          'You can download the library here: <a target="_blank" href="@url">Sendcloud Download</a><br />You should place the file in the following directory <strong>@path/@filename</strong>',
+          array(
+            '@url' => $lib['download url'],
+            '@path' => $lib['library path'],
+            '@filename' => $lib['version arguments']['file'],
+          )
+        ),
+        'value' => $t('Sendcloud library @version loaded!', array('@version' => $lib['version'])),
+        'severity' => REQUIREMENT_OK,
+      );
+    }
+    else {
+      // Not loaded.
+      $requirements['sendcloud_library'] = array(
+        'title' => $t('Sendcloud library'),
+        'description' => $t(
+          'You can download the library here: <a target="_blank" href="@url">Sendcloud Download</a><br />You should place the file in the following directory <strong>@path/@filename</strong>',
+          array(
+            '@url' => $lib['download url'],
+            '@path' => $lib['library path'],
+            '@filename' => $lib['version arguments']['file'],
+          )
+        ),
+        'value' => $t('Sendcloud library not found!'),
+        'severity' => REQUIREMENT_ERROR,
+      );
+
+    }
+
+  }
+  elseif ($phase == 'install') {
+
+    if (!function_exists('curl_version')) {
+      $requirements['curl_enabled'] = array(
+        'title' => $t('Curl not enabled'),
+        'description' => $t('For commerce sendcloud to work you need to have curl enabled'),
+        'value' => $t('Curl not enabled'),
+        'severity' => REQUIREMENT_ERROR,
+      );
+    }
+
+  }
+
+  return $requirements;
+
+}
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_sendcloud_schema() {
+  $schema = array();
+
+  $schema['commerce_sendcloud_service'] = array(
+    'description' => 'Stores information about shipping services created through the Sendcloud module.',
+    'fields' => array(
+      'name' => array(
+        'description' => 'The machine-name of the Sendcloud api service.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'The human-readable title of the Sendcloud api service.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'display_title' => array(
+        'description' => 'The title of the Sendcloud api service displayed to customers.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'description' => array(
+        'description' => 'A brief description of the Sendcloud api service.',
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'medium',
+      ),
+      'rules_component' => array(
+        'description' => 'Boolean indicating whether or not this service should have a default Rules component for enabling it for orders.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'amount' => array(
+        'description' => 'The amount of the base rate of the service.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'currency_code' => array(
+        'description' => 'The currency code of the base rate of the service.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+      ),
+      'data' => array(
+        'description' => 'A serialized array of additional data.',
+        'type' => 'text',
+        'size' => 'big',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('name'),
+  );
+
+  return $schema;
+}

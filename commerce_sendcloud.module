@@ -1,0 +1,577 @@
+<?php
+/**
+ * This file holds the main functions of the module.
+ *
+ * @package commerce_sendcloud
+ *
+ * @version 1
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_sendcloud_menu() {
+  $items = array();
+
+  // Menu item for the settings page.
+  $items['admin/commerce/config/shipping/sendcloud'] = array(
+    'title' => 'SendCloud configuration',
+    'description' => 'Manage SendCloud parameters',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_sendcloud_admin_form'),
+    'access arguments' => array('administer sendcloud settings'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'commerce_sendcloud.admin.inc',
+  );
+
+  // Menu item for the rate creation form.
+  $items['admin/commerce/config/shipping/methods/sendcloud-shipping-method/add'] = array(
+    'title' => 'Add a SendCloud service',
+    'description' => 'Create a new Sendcloud shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_goto',
+    'page arguments' => array('admin/commerce/config/shipping/services/sendcloud/add'),
+    'access callback' => 'commerce_sendcloud_service_permissions',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 8,
+  );
+
+  // Menu item for the rate creation form.
+  $items['admin/commerce/config/shipping/services/sendcloud-shipping-method/add'] = array(
+    'title' => 'Add a SendCloud service',
+    'description' => 'Create a new Sendcloud shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_sendcloud_service_form', commerce_sendcloud_service_new()),
+    'access callback' => 'commerce_sendcloud_service_permissions',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_ACTION,
+    'context' => MENU_CONTEXT_PAGE,
+    'file' => 'commerce_sendcloud.admin.inc',
+  );
+
+  // Loop the sendcloud services.
+  foreach (commerce_shipping_services('commerce_sendcloud_shipping_method') as $name => $shipping_service) {
+    // Convert underscores to hyphens for the menu item argument.
+    $service_name_arg = 'commerce-sendcloud-shipping-method-' . strtr($name, '_', '-');
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/edit'] = array(
+      'title' => 'Edit',
+      'description' => 'Edit the sendcloud service.',
+      'page callback' => 'commerce_sendcloud_service_edit_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_sendcloud_service_permissions',
+      'access arguments' => array('update'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 0,
+      'file' => 'commerce_sendcloud.admin.inc',
+    );
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/delete'] = array(
+      'title' => 'Delete',
+      'description' => 'Delete the SendCloud service.',
+      'page callback' => 'commerce_sendcloud_service_delete_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_sendcloud_service_permissions',
+      'access arguments' => array('delete'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 10,
+      'file' => 'commerce_sendcloud.admin.inc',
+    );
+  }
+
+  return $items;
+
+}
+
+/**
+ * Implements hook_libraries_info().
+ */
+function commerce_sendcloud_libraries_info() {
+  $libraries['sendcloud'] = array(
+    'name' => 'Sendcloud Library',
+    'vendor url' => 'https://www.sendcloud.nl/',
+    'download url' => 'https://github.com/SendCloud/SendCloud-API-PHP-Wrapper',
+    'version arguments' => array(
+      'file' => 'SendCloudApi.php',
+      'pattern' => '@version\s+([0-9a-zA-Z\.-]+)@',
+      'lines' => 5,
+    ),
+    'files' => array(
+      'php' => array('SendCloudApi.php'),
+    ),
+  );
+
+  return $libraries;
+}
+
+/**
+ * Implements hook_commerce_shipping_method_info().
+ */
+function commerce_sendcloud_commerce_shipping_method_info() {
+  $shipping_methods = array();
+
+  $shipping_methods['commerce_sendcloud_shipping_method'] = array(
+    'title' => t('Sendcloud shipping'),
+    'description' => t('Deliver the products using Sendcloud'),
+  );
+
+  return $shipping_methods;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function commerce_sendcloud_permission() {
+  return array(
+    'administer sendcloud services' => array(
+      'title' => t('Administer SendCloud Services'),
+      'description' => t('Create/edit/delete SendCloud rates.'),
+    ),
+    'administer sendcloud settings' => array(
+      'title' => t('Administer SendCloud Settings'),
+      'description' => t('Set sendcloud settings.'),
+    ),
+  );
+}
+
+/**
+ * Checks if the user can create sendcloud services.
+ */
+function commerce_sendcloud_service_permissions($op) {
+  return user_access('administer sendcloud services');
+}
+
+/**
+ * Checks if the user can edit sendcloud settings.
+ */
+function commerce_sendcloud_settings_permissions($op) {
+  return user_access('administer sendcloud settings');
+}
+
+/**
+ * Returns an initialized Sendcloud rate shipping service array for forms.
+ */
+function commerce_sendcloud_service_new() {
+  return array(
+    'name' => '',
+    'title' => '',
+    'display_title' => '',
+    'description' => '',
+    'rules_component' => TRUE,
+    'base_rate' => array(
+      'amount' => 0,
+      'currency_code' => commerce_default_currency(),
+      'data' => array(),
+    ),
+    'data' => array(),
+    'is_new' => TRUE,
+  );
+}
+
+/**
+ * Saves a sendcloud rate service to the database.
+ */
+function commerce_sendcloud_service_save($shipping_service, $skip_reset = FALSE) {
+  // Move the amount and currency code up a level in the service array.
+  if (!empty($shipping_service['base_rate'])) {
+    $shipping_service['amount'] = $shipping_service['base_rate']['amount'];
+    $shipping_service['currency_code'] = $shipping_service['base_rate']['currency_code'];
+  }
+  // Write the record in the database.
+  $op = drupal_write_record(
+    'commerce_sendcloud_service',
+    $shipping_service,
+    empty($shipping_service['is_new']) ? 'name' : array()
+  );
+
+  // If this is a new sendcloud rate service and the insert did not fail...
+  if (!empty($shipping_service['is_new']) && $op !== FALSE) {
+    // Notify other modules that a new tax sendcloud
+    // rate service has been created.
+    module_invoke_all(
+      'commerce_sendcloud_shipping_service_insert',
+      $shipping_service,
+      $skip_reset
+    );
+  }
+  elseif ($op !== FALSE) {
+    // Notify other modules that an existing sendcloud
+    // rate service has been updated.
+    module_invoke_all(
+      'commerce_sendcloud_shipping_service_insert',
+      $shipping_service,
+      $skip_reset
+    );
+  }
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  return $op;
+}
+
+/**
+ * Deletes a sendcloud service.
+ */
+function commerce_sendcloud_service_delete($name, $skip_reset = FALSE) {
+  $shipping_service = commerce_shipping_service_load($name);
+
+  db_delete('commerce_sendcloud_service')
+    ->condition('name', $name)
+    ->execute();
+
+  rules_config_delete(array('commerce_shipping_service_' . $name));
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  // Notify other modules that this sendcloud rate service has been deleted.
+  module_invoke_all('commerce_sendcloud_shipping_service_delete', $shipping_service, $skip_reset);
+}
+
+
+/**
+ * Implements hook_commerce_shipping_service_info().
+ */
+function commerce_sendcloud_commerce_shipping_service_info() {
+  $services = array();
+  // Look for sendcloud rate services currently defined in the database.
+  $result = db_query('SELECT * FROM {commerce_sendcloud_service}')
+    ->fetchAllAssoc('name', PDO::FETCH_ASSOC);
+
+  if (!empty($result)) {
+    foreach ($result as $name => $service) {
+      // Create a base rate price array for the service.
+      $base_rate = array(
+        'amount' => $service['amount'],
+        'currency_code' => $service['currency_code'],
+        'data' => array(),
+      );
+
+      // Unserialize the data array for the service.
+      $data = !empty($service['data']) ? unserialize($service['data']) : array();
+
+      $price_component_type = 'commerce_sendcloud_shipping_method_' . $name;
+
+      // If the data array specifies an included tax, include it now.
+      if (module_exists('commerce_tax') && !empty($data['include_tax']) && $tax_rate = commerce_tax_rate_load($data['include_tax'])) {
+
+        // Reverse apply the tax.
+        $tax_amount = $base_rate['amount'] - ($base_rate['amount'] / (1 + $tax_rate['rate']));
+        $tax_amount = commerce_tax_rate_round_amount($tax_rate, $tax_amount);
+
+        // Add a base price to the data array.
+        $component = array(
+          'amount' => $base_rate['amount'] - $tax_amount,
+          'currency_code' => $base_rate['currency_code'],
+          'data' => array(),
+        );
+
+        $base_rate['data'] = commerce_price_component_add(
+          $base_rate,
+          $price_component_type,
+          $component,
+          TRUE,
+          FALSE
+        );
+
+        // Add the tax to the data array.
+        $component['amount'] = $tax_amount;
+        $component['data']['tax_rate'] = $tax_rate;
+
+        $base_rate['data'] = commerce_price_component_add(
+          $base_rate,
+          $tax_rate['price_component'],
+          $component,
+          TRUE
+        );
+      }
+
+      // Add the full service array to our return value.
+      $services[$name] = array(
+        'title' => $service['title'],
+        'display_title' => !empty($service['display_title']) ? $service['display_title'] : $service['title'],
+        'description' => $service['description'],
+        'shipping_method' => 'commerce_sendcloud_shipping_method',
+        'rules_component' => !empty($service['rules_component']),
+        'price_component' => $price_component_type,
+        'callbacks' => array(
+          'rate' => 'commerce_sendcloud_shipping_service_rate',
+        ),
+        'base_rate' => $base_rate,
+        'data' => $data,
+      );
+
+    }
+  }
+
+  return $services;
+}
+
+/**
+ * Shipping service callback: returns the base rate for a sendcloud service.
+ */
+function commerce_sendcloud_shipping_service_rate($shipping_service, $order) {
+  // The base rate is simply defined in the service, so we return it directly.
+  return $shipping_service['base_rate'];
+}
+
+/**
+ * Implements hook_action_info().
+ */
+function commerce_sendcloud_rules_action_info() {
+  return array(
+    'commerce_sendcloud_create_label' => array(
+      'label' => t('Create SendCloud order and label'),
+      'group' => t('Commerce Shipping'),
+      'configurable' => FALSE,
+      'parameter' => array(
+        'commerce_order' => array(
+          'type' => 'commerce_order',
+          'label' => t('Order'),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements commerce_sendcloud_create_label().
+ */
+function commerce_sendcloud_create_label($order) {
+  // Check if loaded else set watchdog log.
+  if (($lib = libraries_load('sendcloud')) && $lib['loaded'] == 1) {
+    // Library is loaded.
+    $searchids = array();
+    foreach ($order->commerce_line_items[LANGUAGE_NONE] as $val) {
+      array_push($searchids, $val['line_item_id']);
+    }
+    // Load the shipping line item.
+    $shipping_line_items = commerce_line_item_load_multiple(
+      $searchids,
+      array('type' => 'shipping')
+    );
+    // If we have data.
+    if (!empty($shipping_line_items)) {
+      // If we get results loop all the shipping
+      // items and create orders for them.
+      foreach ($shipping_line_items as $value) {
+        // Lets check if it is available.
+        if (!empty($value->data['shipping_service']['data']['sendcloud_type'])) {
+          // Set the id for easy usage.
+          $sendcloud_method_id = $value->data['shipping_service']['data']['sendcloud_type'];
+          // Set the docall var.
+          $docall = FALSE;
+          // Set the update var.
+          $doupdate = FALSE;
+          // Check if our order contains
+          // all the data we need.
+          $order_wrapper = entity_metadata_wrapper('commerce_order', $order->order_number);
+          // Get the shipping address.
+          $shipping = $order_wrapper->commerce_customer_shipping->commerce_customer_address->value();
+          // Get subdata.
+          if (!empty($shipping['thoroughfare']) && !empty($shipping['premise'])) {
+            // Check if the thoroughfare contains a number..
+            $docall = TRUE;
+          }
+          else {
+            watchdog(
+              'SendCloud',
+              'Sendcloud could not create label, missing data',
+              array(),
+              WATCHDOG_ALERT
+            );
+          }
+          // We can continue.
+          if ($docall) {
+            // Approach the api.
+            $sendcloud_api = new SendcloudApi(
+              'live',
+              variable_get('commerce_sendcloud_key'),
+              variable_get('commerce_sendcloud_secret')
+            );
+            // Do the call in a Try/Catch.
+            try {
+              // Full api call.
+              // @TODO: create telephone field.
+              $parcel = $sendcloud_api->parcels->create(
+                array(
+                  'name' => $shipping['name_line'],
+                  'company_name' => '',
+                  'address' => $shipping['thoroughfare'],
+                  'house_number' => $shipping['premise'],
+                  'city' => $shipping['locality'],
+                  'postal_code' => str_replace(' ', '', $shipping['postal_code']),
+                  'telephone' => '',
+                  'email' => $order->mail,
+                  'country' => $shipping['country'],
+                  'requestShipment' => TRUE,
+                  'shipment' => array(
+                    'id' => $sendcloud_method_id,
+                  ),
+                  'order_number' => $order->order_number,
+                )
+              );
+              if (variable_get('commerce_sendcloud_debug', '1') == '1') {
+                watchdog(
+                  'SendCloud',
+                  print_r($parcel, TRUE),
+                  array(),
+                  WATCHDOG_ALERT
+                );
+              }
+              // IF we have a label.
+              if (!empty($parcel['label']['label_printer'])) {
+                // Store the label in the database.
+                // If we can save the file, load it.
+                if ($file = file_save_data(
+                  commerce_sendcloud_download_label($parcel['label']['label_printer']),
+                  'public://sendcloud_labels/' . $parcel['tracking_number'] . '.pdf'
+                )) {
+                  $order->sendcloud_label[LANGUAGE_NONE][] = array(
+                    'fid' => $file->fid,
+                    'display' => 1,
+                    'description' => $parcel['tracking_number'],
+                  );
+                  drupal_set_message(t('Sendcloud label saved'));
+                }
+
+              }
+              // If we have our tracking number, save it.
+              if (!empty($parcel['tracking_number'])) {
+                $order->sendcloud_tracking_number[LANGUAGE_NONE][] = array(
+                  'value' => $parcel['tracking_number'],
+                );
+                $doupdate = TRUE;
+              }
+              // If needed, update fields.
+              if ($doupdate) {
+                // Save the fields.
+                field_attach_update('commerce_order', $order);
+              }
+            }
+            catch (Exception $e) {
+              // Send message and log it.
+              drupal_set_message(t('Sendcloud could not create a parcel.'), 'error');
+              watchdog(
+                'SendCloud',
+                'Error when creating parcel: <pre>' . $e . '</pre>',
+                array(),
+                WATCHDOG_ALERT
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+  else {
+    // Throw error in the watchdog.
+    watchdog(
+      'SendCloud',
+      'Sendcloud library could not be found',
+      array(),
+      WATCHDOG_ALERT,
+      l(t('View status report'), 'admin/reports/status')
+    );
+  }
+}
+
+/**
+ * Downloads the label using curl.
+ */
+function commerce_sendcloud_download_label($url) {
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+  curl_setopt($ch, CURLOPT_USERPWD, variable_get('commerce_sendcloud_key') . ":" . variable_get('commerce_sendcloud_secret'));
+  curl_setopt($ch, CURLOPT_HEADER, 0);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+  $data = curl_exec($ch);
+  curl_close($ch);
+
+  return $data;
+}
+
+/**
+ * Get a list of avialable shipping methods.
+ */
+function commerce_sendcloud_shipping_methods($id = NULL) {
+  // Check if variables are set.
+  if (
+    NULL !== variable_get('commerce_sendcloud_key') &&
+    NULL !== variable_get('commerce_sendcloud_secret')
+  ) {
+    // Check if library is loaded.
+    if (($lib = libraries_load('sendcloud')) && $lib['loaded'] == 1) {
+      // We have credentials, load live data.
+      // Api talk.
+      $sendcloud_api = new SendcloudApi(
+        'live',
+        variable_get('commerce_sendcloud_key'),
+        variable_get('commerce_sendcloud_secret')
+      );
+      // Query.
+      if (NULL !== $id) {
+        try {
+          $returndata = $sendcloud_api->shipping_methods->get($id);
+        }
+        catch (Exception $e) {
+          watchdog(
+            'SendCloud Exception',
+            $e,
+            array(),
+            WATCHDOG_ERROR
+          );
+          drupal_set_message(t('Sendcloud found an Exception, Please check the logs for more information'), 'error');
+        }
+      }
+      else {
+        try {
+          $returndata = $sendcloud_api->shipping_methods->get();
+        }
+        catch (Exception $e) {
+          watchdog(
+            'SendCloud Exception',
+            $e,
+            array(),
+            WATCHDOG_ERROR
+          );
+          drupal_set_message(t('Sendcloud found an exception. Please check the logs for more information'), 'error');
+        }
+      }
+      // Return the data.
+      if (isset($returndata)) {
+        return $returndata;
+      }
+      else {
+        return FALSE;
+      }
+    }
+    else {
+      // Key and secret are here,
+      // But the library is not installed.
+      drupal_set_message(t('Library not loaded'));
+    }
+  }
+  else {
+    // Key and/or secret not entered.
+    // Show message.
+    drupal_set_message(t('Please enter your key and secret to show shipping methods'));
+    return FALSE;
+  }
+}

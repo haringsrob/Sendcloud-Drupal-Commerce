@@ -1,0 +1,8 @@
+name = SendCloud
+description = Integrates SendCloud with Commerce Shipping.
+package = Commerce (shipping)
+configure = admin/commerce/config/shipping/sendcloud
+dependencies[] = commerce
+dependencies[] = libraries
+dependencies[] = commerce_shipping
+core = 7.x
