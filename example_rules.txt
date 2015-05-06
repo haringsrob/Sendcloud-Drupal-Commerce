@@ -1,0 +1,14 @@
+{ "rules_create_sendcloud_label" : {
+    "LABEL" : "Create Sendcloud label",
+    "PLUGIN" : "reaction rule",
+    "OWNER" : "rules",
+    "REQUIRES" : [ "rules", "commerce_sendcloud", "entity" ],
+    "ON" : { "commerce_order_update" : [] },
+    "IF" : [
+      { "data_is" : { "data" : [ "commerce-order:status" ], "value" : "completed" } }
+    ],
+    "DO" : [
+      { "commerce_sendcloud_create_label" : { "commerce_order" : [ "commerce_order" ] } }
+    ]
+  }
+}
