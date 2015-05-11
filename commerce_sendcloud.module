@@ -405,6 +405,13 @@ function commerce_sendcloud_create_label($order) {
             );
             // Do the call in a Try/Catch.
             try {
+
+              if (variable_get('commerce_sendcloud_download_labels', '1') == '1' || variable_get('commerce_sendcloud_download_labels', '1') == 1) {
+                $requestShipment = TRUE;
+              } else {
+                $requestShipment = FALSE;
+              }
+
               // Full api call.
               // @TODO: create telephone field.
               $parcel = $sendcloud_api->parcels->create(
@@ -418,7 +425,7 @@ function commerce_sendcloud_create_label($order) {
                   'telephone' => '',
                   'email' => $order->mail,
                   'country' => $shipping['country'],
-                  'requestShipment' => TRUE,
+                  'requestShipment' => $requestShipment,
                   'shipment' => array(
                     'id' => $sendcloud_method_id,
                   ),

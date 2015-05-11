@@ -77,6 +77,12 @@ function commerce_sendcloud_admin_form($form, &$form_state) {
     '#default_value' => variable_get('commerce_sendcloud_download_labels', '1'),
   );
 
+  /*$form['tab2']['commerce_sendcloud_debug'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enable Debugging'),
+    '#default_value' => variable_get('commerce_sendcloud_debug', '1'),
+  );*/
+
   // Render the form.
   return system_settings_form($form);
 }
