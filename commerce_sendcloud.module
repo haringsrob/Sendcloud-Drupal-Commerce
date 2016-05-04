@@ -515,7 +515,12 @@ function commerce_sendcloud_download_label($url) {
 }
 
 /**
- * Get a list of avialable shipping methods.
+ * Get a list of available shipping methods.
+ * 
+ * @param null $id
+ *  The id of the shipping method to retrieve, or NULL for full list.
+ * @return array|bool
+ *  Returns an array of shipping methods, or FALSE.
  */
 function commerce_sendcloud_shipping_methods($id = NULL) {
   // Check if variables are set.
@@ -528,56 +533,32 @@ function commerce_sendcloud_shipping_methods($id = NULL) {
       // We have credentials, load live data.
       // Api talk.
       $sendcloud_api = new SendcloudApi(
-        'live',
         variable_get('commerce_sendcloud_key'),
         variable_get('commerce_sendcloud_secret')
       );
-      // Query.
-      if (NULL !== $id) {
-        try {
-          $returndata = $sendcloud_api->shipping_methods->get($id);
-        }
-        catch (Exception $e) {
-          watchdog(
-            'SendCloud Exception',
-            $e,
-            array(),
-            WATCHDOG_ERROR
-          );
-          drupal_set_message(t('Sendcloud found an Exception, Please check the logs for more information'), 'error');
-        }
+      // Fetch the data from the API.
+      try {
+        $returndata = $sendcloud_api->shipping_methods->get($id);
       }
-      else {
-        try {
-          $returndata = $sendcloud_api->shipping_methods->get();
-        }
-        catch (Exception $e) {
-          watchdog(
-            'SendCloud Exception',
-            $e,
-            array(),
-            WATCHDOG_ERROR
-          );
-          drupal_set_message(t('Sendcloud found an exception. Please check the logs for more information'), 'error');
-        }
+      catch (Exception $e) {
+        watchdog(
+          'SendCloud Exception',
+          $e,
+          array(),
+          WATCHDOG_ERROR
+        );
+        drupal_set_message(t('Sendcloud found an Exception, Please check the logs for more information'), 'error');
       }
       // Return the data.
-      if (isset($returndata)) {
-        return $returndata;
-      }
-      else {
-        return FALSE;
-      }
+      return isset($returndata) ? $returndata : FALSE;
     }
     else {
-      // Key and secret are here,
-      // But the library is not installed.
+      // Key and secret are here, but the library is not loaded.
       drupal_set_message(t('Library not loaded'));
     }
   }
   else {
     // Key and/or secret not entered.
-    // Show message.
     drupal_set_message(t('Please enter your key and secret to show shipping methods'));
     return FALSE;
   }
