@@ -149,7 +149,7 @@ function commerce_sendcloud_service_form($form, &$form_state, $shipping_service)
 
   if ($availablemethods = commerce_sendcloud_shipping_methods()) {
     foreach ($availablemethods as $sm) {
-      $methods[$sm['id']] = $sm['name'] . ' (' . (!empty($sm['price']) ? '€' . $sm['price'] : 'Not available') . ')';
+      $methods[$sm['id']] = $sm['name'];
     }
 
     $form['commerce_sendcloud_rate']['sendcloud_type'] = array(
