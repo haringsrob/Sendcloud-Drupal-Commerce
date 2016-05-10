@@ -373,6 +373,10 @@ function commerce_sendcloud_create_label($order) {
         if (!empty($value->data['shipping_service']['data']['sendcloud_type'])) {
           // Set the id for easy usage.
           $sendcloud_method_id = $value->data['shipping_service']['data']['sendcloud_type'];
+          if (variable_get('commerce_sendcloud_testmode') == 1) {
+            //@TODO : this is hardcoded ATM, devise proper way to obtain this id.
+            $sendcloud_method_id = 8;
+          }
           // Set the docall var.
           $docall = FALSE;
           // Set the update var.
@@ -399,7 +403,6 @@ function commerce_sendcloud_create_label($order) {
           if ($docall) {
             // Approach the api.
             $sendcloud_api = new SendcloudApi(
-              'live',
               variable_get('commerce_sendcloud_key'),
               variable_get('commerce_sendcloud_secret')
             );

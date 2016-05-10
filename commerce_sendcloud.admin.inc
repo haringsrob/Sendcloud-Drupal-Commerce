@@ -62,6 +62,9 @@ function commerce_sendcloud_admin_form($form, &$form_state) {
   $form['tab2']['commerce_sendcloud_testmode'] = array(
     '#type' => 'checkbox',
     '#title' => t('Enable testmode'),
+    '#description' => t('Enables test-mode. Because of API limitations, this means setting the shipping method to 
+        <strong>Unstamped Letter</strong>, the only shipping method that does not require payment information. After
+        sending a test, you should delete the parcel from the SendCloud control panel manually!'),
     '#default_value' => variable_get('commerce_sendcloud_testmode', '1'),
   );
 
