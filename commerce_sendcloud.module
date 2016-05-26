@@ -160,6 +160,7 @@ function commerce_sendcloud_service_new() {
     'title' => '',
     'display_title' => '',
     'description' => '',
+    'default_weight' => '',
     'rules_component' => TRUE,
     'base_rate' => array(
       'amount' => 0,
@@ -370,19 +371,25 @@ function commerce_sendcloud_create_label($order) {
       // items and create orders for them.
       foreach ($shipping_line_items as $value) {
         // Lets check if it is available.
-        if (!empty($value->data['shipping_service']['data']['sendcloud_type'])) {
+        if (!empty($value->data['shipping_service']['data']['sendcloud_type']) && $shipping_method = $value->data['shipping_service']) {
+
           // Set the id for easy usage.
-          $sendcloud_method_id = $value->data['shipping_service']['data']['sendcloud_type'];
+          $sendcloud_method_id = $shipping_method['data']['sendcloud_type'];
+
+          // Set the default shipping weight.
+          $shipping_method_weight = isset($shipping_method['data']['default_weight']) ? $shipping_method['data']['default_weight'] : 0;
+
+          // Set the method if testmode is enabled.
           if (variable_get('commerce_sendcloud_testmode') == 1) {
-            //@TODO : this is hardcoded ATM, devise proper way to obtain this id.
+            // @TODO : this is hardcoded ATM, find proper way to obtain this id.
             $sendcloud_method_id = 8;
           }
+
           // Set the docall var.
           $docall = FALSE;
           // Set the update var.
           $doupdate = FALSE;
-          // Check if our order contains
-          // all the data we need.
+          // Check if our order contains all the data we need.
           $order_wrapper = entity_metadata_wrapper('commerce_order', $order->order_number);
           // Get the shipping address.
           $shipping = $order_wrapper->commerce_customer_shipping->commerce_customer_address->value();
@@ -408,33 +415,37 @@ function commerce_sendcloud_create_label($order) {
             );
             // Do the call in a Try/Catch.
             try {
-
+              $requestShipment = FALSE;
               if (variable_get('commerce_sendcloud_download_labels', '1') == '1' || variable_get('commerce_sendcloud_download_labels', '1') == 1) {
                 $requestShipment = TRUE;
-              } else {
-                $requestShipment = FALSE;
               }
 
-              // Full api call.
-              // @TODO: create telephone field.
-              $parcel = $sendcloud_api->parcels->create(
-                array(
-                  'name' => $shipping['name_line'],
-                  'company_name' => '',
-                  'address' => $shipping['thoroughfare'],
-                  'house_number' => $shipping['premise'],
-                  'city' => $shipping['locality'],
-                  'postal_code' => str_replace(' ', '', $shipping['postal_code']),
-                  'telephone' => '',
-                  'email' => $order->mail,
-                  'country' => $shipping['country'],
-                  'requestShipment' => $requestShipment,
-                  'shipment' => array(
-                    'id' => $sendcloud_method_id,
-                  ),
-                  'order_number' => $order->order_number,
-                )
-              );
+              // If physical order weight is available we use it.
+              if (function_exists('commerce_physical_order_weight') && $weight = commerce_physical_order_weight($order)) {
+                $shipping_method_weight = $weight;
+              }
+
+              // Setup the array of data as we are going to pass it to the api.
+              $parcel_data = [
+                'name' => $shipping['name_line'],
+                'company_name' => '',
+                'address' => $shipping['thoroughfare'],
+                'house_number' => $shipping['premise'],
+                'city' => $shipping['locality'],
+                'postal_code' => str_replace(' ', '', $shipping['postal_code']),
+                'telephone' => '',
+                'email' => $order->mail,
+                'country' => $shipping['country'],
+                'requestShipment' => $requestShipment,
+                'shipment' => [
+                  'id' => $sendcloud_method_id,
+                ],
+                'order_number' => $order->order_number,
+                'weight' => $shipping_method_weight,
+              ];
+
+              // Create the parcel.
+              $parcel = $sendcloud_api->parcels->create($parcel_data);
               if (variable_get('commerce_sendcloud_debug', '1') == '1') {
                 watchdog(
                   'SendCloud',
@@ -519,7 +530,7 @@ function commerce_sendcloud_download_label($url) {
 
 /**
  * Get a list of available shipping methods.
- * 
+ *
  * @param null $id
  *  The id of the shipping method to retrieve, or NULL for full list.
  * @return array|bool

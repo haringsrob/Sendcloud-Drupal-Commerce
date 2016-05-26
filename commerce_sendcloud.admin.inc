@@ -80,12 +80,6 @@ function commerce_sendcloud_admin_form($form, &$form_state) {
     '#default_value' => variable_get('commerce_sendcloud_download_labels', '1'),
   );
 
-  /*$form['tab2']['commerce_sendcloud_debug'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Enable Debugging'),
-    '#default_value' => variable_get('commerce_sendcloud_debug', '1'),
-  );*/
-
   // Render the form.
   return system_settings_form($form);
 }
@@ -162,14 +156,22 @@ function commerce_sendcloud_service_form($form, &$form_state, $shipping_service)
       '#default_value' => !empty($shipping_service['data']['sendcloud_type']) ? $shipping_service['data']['sendcloud_type'] : 0,
       '#options' => $methods,
     );
-    $disablebutton = FALSE;
+    $disable_button = FALSE;
   }
   else {
     $form['notification'] = array(
       '#markup' => t('Invalid configuration. Please check the options of sendcloud'),
     );
-    $disablebutton = TRUE;
+    $disable_button = TRUE;
   }
+
+  $form['commerce_sendcloud_rate']['default_weight'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Default weight (kg)'),
+    '#required' => TRUE,
+    '#description' => t('The default weight of the package in case no weight is available on the order. The weight should correspond with the parcel type.'),
+    '#default_value' => isset($shipping_service['data']['default_weight']) ? $shipping_service['data']['default_weight'] : '',
+  );
 
   $form['commerce_sendcloud_rate']['amount'] = array(
     '#type' => 'textfield',
@@ -267,7 +269,7 @@ function commerce_sendcloud_service_form($form, &$form_state, $shipping_service)
   $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save sendcloud rate'),
-    '#disabled' => $disablebutton,
+    '#disabled' => $disable_button,
   );
 
   if (!empty($form_state['shipping_service']['name'])) {
@@ -296,27 +298,27 @@ function commerce_sendcloud_service_form_validate($form, &$form_state) {
       'commerce_sendcloud',
       t('You must enter a numeric value for the base rate amount.')
     );
+    return;
   }
-  else {
-    // Convert the decimal amount value entered to an
-    // integer based amount value.
-    form_set_value(
-      $form['commerce_sendcloud_rate']['amount'],
-      commerce_currency_decimal_to_amount($form_state['values']['commerce_sendcloud_rate']['amount'],
-      $form_state['values']['commerce_sendcloud_rate']['currency_code']),
-      $form_state
-    );
-  }
+  // Convert the decimal amount value entered to an integer based amount
+  // value.
+  form_set_value(
+    $form['commerce_sendcloud_rate']['amount'],
+    commerce_currency_decimal_to_amount($form_state['values']['commerce_sendcloud_rate']['amount'],
+    $form_state['values']['commerce_sendcloud_rate']['currency_code']),
+    $form_state
+  );
 }
 
 /**
  * Submit handler: saves the new or updated flat rate service.
  */
 function commerce_sendcloud_service_form_submit($form, &$form_state) {
-
   $shipping_service = $form_state['shipping_service'];
+  $submitted_data = $form_state['values']['commerce_sendcloud_rate'];
 
-  $looparray = array(
+  // Update the shipping service array with values from the form.
+  $default_fields = array(
     'name',
     'title',
     'display_title',
@@ -324,26 +326,23 @@ function commerce_sendcloud_service_form_submit($form, &$form_state) {
     'amount',
     'currency_code',
   );
-
-  // Update the shipping service array with values from the form.
-  foreach ($looparray as $key) {
-    $shipping_service[$key] = $form_state['values']['commerce_sendcloud_rate'][$key];
+  foreach ($default_fields as $field_name) {
+    $shipping_service[$field_name] = $submitted_data[$field_name];
   }
 
-  // If a tax was specified for inclusion, add it to the data array.
-  if (!empty($form_state['values']['commerce_sendcloud_rate']['include_tax'])) {
-    $shipping_service['data']['include_tax'] = $form_state['values']['commerce_sendcloud_rate']['include_tax'];
-  }
-  elseif (!empty($shipping_service['data']['include_tax'])) {
-    unset($shipping_service['data']['include_tax']);
-  }
-
-  // Set the rate.
-  if (!empty($form_state['values']['commerce_sendcloud_rate']['sendcloud_type'])) {
-    $shipping_service['data']['sendcloud_type'] = $form_state['values']['commerce_sendcloud_rate']['sendcloud_type'];
-  }
-  elseif (!empty($shipping_service['data']['sendcloud_type'])) {
-    unset($shipping_service['data']['sendcloud_type']);
+  // Parse the special fields and add them to the data array.
+  $special_fields = [
+    'include_tax',
+    'sendcloud_type',
+    'default_weight',
+  ];
+  foreach ($special_fields as $field_name) {
+    if (!empty($submitted_data[$field_name])) {
+      $shipping_service['data'][$field_name] = $submitted_data[$field_name];
+    }
+    elseif (!empty($shipping_service['data'][$field_name])) {
+      unset($shipping_service['data'][$field_name]);
+    }
   }
 
   // Save the shipping service.
@@ -359,7 +358,6 @@ function commerce_sendcloud_service_form_submit($form, &$form_state) {
     drupal_set_message(t('Sendcloud service saved.'));
     $form_state['redirect'] = 'admin/commerce/config/shipping';
   }
-
 }
 
 /**
