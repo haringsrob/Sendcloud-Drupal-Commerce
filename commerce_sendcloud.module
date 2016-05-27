@@ -441,7 +441,7 @@ function commerce_sendcloud_create_label($order) {
                   'id' => $sendcloud_method_id,
                 ],
                 'order_number' => $order->order_number,
-                'weight' => $shipping_method_weight,
+                'weight' => number_format((float) $shipping_method_weight, 3),
               ];
 
               // Create the parcel.
